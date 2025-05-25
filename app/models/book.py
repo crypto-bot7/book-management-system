@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
@@ -12,4 +11,3 @@ class Book(Base):
     genre = Column(String)
     year_published = Column(Integer)
     summary = Column(String)
-    reviews = relationship("Review", back_populates="book")
