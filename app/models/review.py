@@ -1,7 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import declarative_base
+from app.models.base import Base
 
-Base = declarative_base()
 
 class Review(Base):
     __tablename__ = "reviews"

@@ -1,67 +1,56 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.book import Book, BookCreate
+from sqlalchemy import select, insert, update, delete
 from app.models.book import Book as BookModel
+from app.schemas import BookCreate, BookUpdate, BookResponse
 from app.services.database import get_db
 from app.services.llama import generate_summary
 
 router = APIRouter()
 
-@router.post("/books/", response_model=Book)
+@router.post("/books", response_model=BookResponse, status_code=201)
 async def create_book(book: BookCreate, db: AsyncSession = Depends(get_db)):
-    summary = await generate_summary(book.content)
-    db_book = BookModel(
-        title=book.title,
-        author=book.author,
-        genre=book.genre,
-        year_published=book.year_published,
-        summary=summary
-    )
-    db.add(db_book)
+    book_data = book.dict(exclude={"content"})
+    if book.content:
+        summary = await generate_summary(book.content)
+        book_data["summary"] = summary
+    stmt = insert(BookModel).values(**book_data).returning(BookModel)
+    result = await db.execute(stmt)
     await db.commit()
-    await db.refresh(db_book)
-    return db_book
+    return result.scalars().first()
 
-@router.get("/books/{book_id}", response_model=Book)
-async def read_book(book_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/books", response_model=list[BookResponse])
+async def get_books(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(BookModel))
+    return result.scalars().all()
+
+@router.get("/books/{book_id}", response_model=BookResponse)
+async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(BookModel).where(BookModel.id == book_id))
-    book = result.scalar_one_or_none()
-    if book is None:
+    book = result.scalars().first()
+    if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     return book
 
-@router.get("/books/", response_model=list[Book])
-async def read_books(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(BookModel))
-    books = result.scalars().all()
-    return books
-
-@router.put("/books/{book_id}", response_model=Book)
-async def update_book(book_id: int, book: BookCreate, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(BookModel).where(BookModel.id == book_id))
-    db_book = result.scalar_one_or_none()
-    if db_book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
-    
-    db_book.title = book.title
-    db_book.author = book.author
-    db_book.genre = book.genre
-    db_book.year_published = book.year_published
-    db_book.summary = await generate_summary(book.content)
-    
+@router.put("/books/{book_id}", response_model=BookUpdate)
+async def update_book(book_id: int, book: BookUpdate, db: AsyncSession = Depends(get_db)):
+    update_data = book.dict(exclude_unset=True, exclude={"content"})
+    if book.content:
+        summary = await generate_summary(book.content)
+        update_data["summary"] = summary
+    stmt = update(BookModel).where(BookModel.id == book_id).values(**update_data).returning(BookModel)
+    result = await db.execute(stmt)
     await db.commit()
-    await db.refresh(db_book)
-    return db_book
+    updated_book = result.scalars().first()
+    if not updated_book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return updated_book
 
-@router.delete("/books/{book_id}", response_model=dict)
+@router.delete("/books/{book_id}", status_code=204)
 async def delete_book(book_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(BookModel).where(BookModel.id == book_id))
-    db_book = result.scalar_one_or_none()
-    if db_book is None:
-        raise HTTPException(status_code=404, detail="Book not found")
-    
-    await db.delete(db_book)
+    stmt = delete(BookModel).where(BookModel.id == book_id)
+    result = await db.execute(stmt)
     await db.commit()
-    return {"detail": "Book deleted successfully"}
-
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Book not found")
+    return None
