@@ -6,6 +6,8 @@ from app.models.base import Base
 from app.models.book import Book
 from app.models.review import Review
 
+# todo: mock ollama calls
+
 @pytest.fixture(scope="module")
 async def test_db():
     async with engine.begin() as conn:
